@@ -59,6 +59,8 @@ documented in `Proctree.cs`.
 
 [presets.json](presets.json) holds settings for nine species, with a typical height, crown
 and trunk in metres and bark and foliage colours, as a starting point for real-looking trees.
+Found settings that make a good tree? Open a
+[Preset issue](../../issues/new?template=preset.yml) with the entry and a picture.
 
 ## Licence
 

@@ -1,0 +1,81 @@
+name: Preset
+description: Propose settings for a species, for presets.json
+title: "Preset: <common name>"
+labels: [preset]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A preset is one entry in [presets.json](../blob/main/presets.json): Proctree settings that
+        generate a convincing tree, with its typical size in metres and its colours. Paste the
+        entry as it should appear in the file. A picture of the result helps more than words.
+  - type: input
+    id: name
+    attributes:
+      label: Common name
+      placeholder: London Plane
+    validations:
+      required: true
+  - type: input
+    id: botanical
+    attributes:
+      label: Botanical name
+      placeholder: Platanus × acerifolia
+    validations:
+      required: true
+  - type: textarea
+    id: entry
+    attributes:
+      label: Entry
+      description: The full presets.json entry. Every key is a Proctree property in camelCase; height, crownDiameter and trunkDiameter are metres; colours are #RRGGBB.
+      render: json
+      value: |
+        {
+          "name": "",
+          "botanical": "",
+          "height": 0,
+          "crownDiameter": 0,
+          "trunkDiameter": 0,
+          "levels": 7,
+          "treeSteps": 4,
+          "trunkLength": 1.75,
+          "climbRate": 0.84,
+          "initialBranchLength": 0.7,
+          "lengthFalloffFactor": 0.73,
+          "lengthFalloffPower": 0.76,
+          "clumpMax": 0.45,
+          "clumpMin": 0.55,
+          "branchFactor": 3.4,
+          "dropAmount": 0.05,
+          "branchPitch": 0.1,
+          "crownExpansion": 0.9,
+          "trunkKink": 0.03,
+          "twistRate": 2.0,
+          "radiusFalloffRate": 0.72,
+          "maxRadius": 0.14,
+          "twigScale": 0.35,
+          "leafCount": 6,
+          "leafDepth": 0.7,
+          "leafAspect": 1.1,
+          "barkColor": "#663300",
+          "foliageColor": "#127600",
+          "highlightColor": "#D3F400",
+          "colorVariation": 0.13
+        }
+    validations:
+      required: true
+  - type: input
+    id: seed
+    attributes:
+      label: Seed the picture was made with
+      placeholder: "7"
+  - type: textarea
+    id: picture
+    attributes:
+      label: Picture
+      description: Drop an image of the generated tree here, ideally beside a photo of the real species.
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Where the shape came from, what was measured, anything a reviewer should know.
