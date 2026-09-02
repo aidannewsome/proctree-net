@@ -57,6 +57,9 @@ birch.TwigVertices; birch.TwigFaces; birch.TwigNormals; birch.TwigUV;
 The tree is y-up in its own units; scale it to the height you want. Every property is
 documented in `Proctree.cs`.
 
+[presets.json](presets.json) holds settings for nine species, with a typical height, crown
+and trunk in metres and bark and foliage colours, as a starting point for real-looking trees.
+
 ## Licence
 
 BSD 3-Clause, the original's licence, with its notice kept: see [LICENSE](LICENSE). The
