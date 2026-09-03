@@ -226,6 +226,11 @@ public sealed class Tree
 	/// colour toward its highlight the leaf shades.</summary>
 	public IReadOnlyList<double> LeafShades => leafShades;
 
+	/// <summary>The trunk's first branch, from which the whole forking skeleton hangs:
+	/// each branch has its head, length, radius and two children. Null for radial
+	/// branching, which builds whorls rather than a branch tree.</summary>
+	public Branch Root { get; }
+
 	public Tree(Properties properties = null)
 	{
 		Properties = properties ?? new Properties();
@@ -241,6 +246,7 @@ public sealed class Tree
 		{
 			Length = Properties.InitialBranchLength,
 		};
+		Root = root;
 		root.Split(Properties.Levels, Properties.TreeSteps, Properties);
 		CreateForks(root, Properties.MaxRadius);
 		CreateTwigs(root);
@@ -767,7 +773,7 @@ public sealed class Tree
 
 /// <summary>One branch of the growing structure: a head position and, after
 /// splitting, two children. The trunk is the chain of branches flagged Trunk.</summary>
-internal sealed class Branch
+public sealed class Branch
 {
 	public Vector3 Head;
 	public Branch Parent;
