@@ -98,10 +98,6 @@ public sealed class Properties
 	/// TaperRate in the trunk's length falloff when set.</summary>
 	public double? CrownExpansion { get; set; }
 
-	/// <summary>The ground ring's spread as a multiple of the trunk radius. Unset,
-	/// the original's radius over RadiusFalloffRate.</summary>
-	public double? RootSpread { get; set; }
-
 	/// <summary>Leaves per branch tip. Setting this generates geometric leaves,
 	/// single triangles scattered around each branch end, sized by TwigScale, in
 	/// LeafVertices, LeafFaces and LeafShades.</summary>
@@ -119,41 +115,13 @@ public sealed class Properties
 	/// position, up to about a radian and a half at one.</summary>
 	public double LeafOrientation { get; set; }
 
-	/// <summary>How far a frond's tip arcs toward the ground, in the tree's own
-	/// units: the spine leaves straight and sags quadratically, the way palm fronds
-	/// arch. Zero keeps fronds straight. Radial branching only.</summary>
-	public double LeafDroop { get; set; }
-
-	/// <summary>Where along a frond its leaflets start, as a fraction of the frond's
-	/// length. The original's own conifers leave the inner two thirds bare, which is
-	/// the default; a palm sets a smaller share, so leaflets run most of the frond and
-	/// no bare stem shows through the crown.</summary>
-	public double LeafZone { get; set; } = 2.0 / 3.0;
-
-	/// <summary>How much fronds shrink climbing the stem, zero to one: one shrinks
-	/// them to nothing at the top, the way a conifer tapers, zero keeps every whorl's
-	/// fronds full, the way a palm's crown is all one age of leaf. Radial branching
-	/// only.</summary>
-	public double LeafTaper { get; set; } = 1;
-
 	/// <summary>Grows whorls of straight limbs radiating from a single stem instead
-	/// of forking branches: conifers and palms. Levels becomes limbs per whorl, the
-	/// length settings shape each whorl's reach, BranchPitch and DropAmount lift or
-	/// sink the limb tips, and leaves become paired leaflets along each
-	/// frond.</summary>
+	/// of forking branches: conifers. Levels becomes limbs per whorl, the length
+	/// settings shape each whorl's reach, BranchPitch and DropAmount lift or sink
+	/// the limb tips, and leaves become paired leaflets along each frond. The stem
+	/// thins by three quarters at each whorl and a frond's leaflets start two thirds
+	/// of the way out, as the original's own conifers do.</summary>
 	public bool RadialBranching { get; set; }
-
-	/// <summary>How much the stem thins at each whorl. The original's own conifers
-	/// hold a constant three quarters, which is the default; a palm sets one, so its
-	/// trunk carries its full width all the way to the crown.</summary>
-	public double StemTaper { get; set; } = 0.75;
-
-	/// <summary>How far the whorls' rises fan apart, in the tree's own units: the
-	/// lowest whorl sinks half of this and the highest climbs half. With whorls
-	/// stacked tightly it grows a palm's crown of ages, young fronds climbing from
-	/// the centre over old ones hanging at the rim. Zero keeps every whorl's rise
-	/// the same. Radial branching only.</summary>
-	public double BranchPitchRange { get; set; }
 
 	internal double Rseed;
 
@@ -171,9 +139,12 @@ public sealed class Properties
 }
 
 /// <summary>One generated tree, grown once in the constructor: the bark mesh
-/// (Vertices, Faces as quads between rings, Normals, UV) and the twig mesh of leaf quads at branch ends
-/// (TwigVertices, TwigFaces, TwigNormals, TwigUV). A port of proctree.js
-/// (Paul Brunt, BSD 3-Clause: see LICENSE).</summary>
+/// (Vertices, Faces as quads between rings, Normals, UV), the twig mesh of leaf quads
+/// at branch ends (TwigVertices, TwigFaces, TwigNormals, TwigUV) and, when LeafCount is
+/// set, geometric leaves (LeafVertices, LeafFaces, LeafShades). A port of proctree.js
+/// (Paul Brunt, BSD 3-Clause: see LICENSE) with the C++ port's bark UVs: U runs once
+/// round each ring and the seam is split, so a bark texture neither mirrors nor
+/// wraps.</summary>
 public sealed class Tree
 {
 	readonly List<Vector3> vertices = [];
@@ -186,7 +157,11 @@ public sealed class Tree
 	readonly List<Face> leafFaces = [];
 	readonly List<double> leafShades = [];
 	Vector3[] normals;
-	readonly Vector2[] uv;
+	Vector2[] uv;
+
+	// The stem thins by this at each whorl, and a frond's leaflets start this far along
+	// its ray: the original's own conifers, held fixed.
+	const double StemTaper = 0.75, LeafZone = 2.0 / 3.0;
 
 	// A fixed shade sequence for leaves, cycling with the leaf counter: 0..19,
 	// read as twentieths of the way from a foliage colour to its highlight.
@@ -237,9 +212,12 @@ public sealed class Tree
 		Properties.Rseed = Properties.Seed;
 		if (Properties.RadialBranching)
 		{
-			CreateWhorls(CreateStem());
+			var centers = CreateStem();
+			CreateWhorls(centers);
 			uv = new Vector2[vertices.Count];
+			CreateRadialUV(centers);
 			CalculateNormals();
+			FixUVs();
 			return;
 		}
 		var root = new Branch(new Vector3(0, Properties.TrunkLength, 0))
@@ -255,12 +233,13 @@ public sealed class Tree
 		uv = new Vector2[vertices.Count];
 		CreateFaces(root);
 		CalculateNormals();
+		FixUVs();
 	}
 
-	/// <summary>The radial stem: a ground ring, one ring per climbed segment, and a
-	/// near-point top at the fractional last step, banded into a tube. Returns the
-	/// ring centres for the whorls to sit on. An extension; the original forks
-	/// only.</summary>
+	/// <summary>The radial stem: a ground ring four thirds of the trunk radius wide,
+	/// one ring per climbed segment, and a near-point top at the fractional last step,
+	/// banded into a tube. Returns the ring centres for the whorls to sit on. An
+	/// extension; the original forks only.</summary>
 	List<Vector3> CreateStem()
 	{
 		var p = Properties;
@@ -281,8 +260,8 @@ public sealed class Tree
 		for (int ring = 0; ring < centers.Count; ring++)
 		{
 			double radius = ring == 0
-				? baseRadius * (p.RootSpread ?? 4.0 / 3.0)
-				: Math.Max(baseRadius * Math.Pow(p.StemTaper, ring - 1), 0.001);
+				? baseRadius * 4.0 / 3.0
+				: Math.Max(baseRadius * Math.Pow(StemTaper, ring - 1), 0.001);
 			for (int i = 0; i < segments; i++)
 			{
 				Vector3 vec = new Vector3(-1, 0, 0).AxisAngle(new Vector3(0, 1, 0), -segmentAngle * i);
@@ -320,18 +299,17 @@ public sealed class Tree
 		int limbs = p.Levels;
 		for (int k = 0; k < whorlCount; k++)
 		{
-			double rise = baseRise + p.BranchPitchRange
-				* (whorlCount > 1 ? (double)k / (whorlCount - 1) - 0.5 : 0);
 			reach = Math.Pow(reach, p.LengthFalloffPower) * p.LengthFalloffFactor * crownStep;
 			double whorlBase = p.Random(0) * 2 * Math.PI + k * p.TwistRate;
-			double limbRadius = baseRadius * Math.Pow(p.StemTaper, k + 1) * p.RadiusFalloffRate / 2;
-			double leafSize = 1 - p.LeafTaper * ((double)k / p.TreeSteps);
+			double limbRadius = baseRadius * Math.Pow(StemTaper, k + 1) * p.RadiusFalloffRate / 2;
+			// Fronds shrink climbing the stem: the top whorl's are the youngest.
+			double leafSize = 1 - (double)k / p.TreeSteps;
 			for (int j = 0; j < limbs; j++)
 			{
 				double azimuth = whorlBase + j * 2 * Math.PI / limbs + (p.Random(0) - 0.5) * 0.9;
 				var flat = new Vector3(Math.Sin(azimuth), 0, Math.Cos(azimuth));
-				Vector3 start = centers[k + 1] + flat * (baseRadius * Math.Pow(p.StemTaper, k + 1));
-				var tip = new Vector3(flat.X * reach, centers[k + 1].Y + rise, flat.Z * reach);
+				Vector3 start = centers[k + 1] + flat * (baseRadius * Math.Pow(StemTaper, k + 1));
+				var tip = new Vector3(flat.X * reach, centers[k + 1].Y + baseRise, flat.Z * reach);
 				Vector3 dir = (tip - start).Normalized;
 				Vector3 side = Vector3.Cross(new Vector3(0, 1, 0), dir).Normalized;
 				Vector3 up = Vector3.Cross(dir, side);
@@ -350,14 +328,12 @@ public sealed class Tree
 				{
 					// The frond rides the ray from the stem's axis through the tip,
 					// not the woody limb, so short high limbs still carry full
-					// fronds; the exports show exactly this. Age hangs low: the
-					// lowest whorl bends the full LeafDroop, the youngest barely.
+					// fronds; the exports show exactly this.
 					var axis = new Vector3(0, centers[k + 1].Y, 0);
 					Vector3 ray = (tip - axis).Normalized;
 					Vector3 raySide = Vector3.Cross(new Vector3(0, 1, 0), ray).Normalized;
-					double age = whorlCount > 1 ? 1 - (double)k / (whorlCount - 1) : 1;
 					CreateFrond(axis, ray, raySide, Vector3.Cross(ray, raySide),
-						(tip - axis).Length, leafSize, p.LeafDroop * age);
+						(tip - axis).Length, leafSize);
 				}
 			}
 		}
@@ -367,7 +343,7 @@ public sealed class Tree
 	/// segments, wings arcing to a peak mid-frond. The zone starts two thirds of
 	/// the way out (never closer than a floor that keeps short high limbs leafy)
 	/// and marches past the woody tip.</summary>
-	void CreateFrond(Vector3 start, Vector3 dir, Vector3 side, Vector3 up, double length, double sizeScale, double droop)
+	void CreateFrond(Vector3 start, Vector3 dir, Vector3 side, Vector3 up, double length, double sizeScale)
 	{
 		var p = Properties;
 		int count = p.LeafCount.Value;
@@ -376,18 +352,13 @@ public sealed class Tree
 		double span = 1.8 * p.TwigScale * p.LeafAspect / pairs * frondScale;
 		double spacing = 0.95 * span;
 		double wingReach = 0.9 * p.TwigScale * p.LeafAspect * frondScale;
-		double zoneStart = Math.Max(length * p.LeafZone, 0.12 * p.LeafZone);
-		double zone = spacing * (pairs - 1) + span;
-		var sag = new Vector3(0, -droop, 0);
+		double zoneStart = Math.Max(length * LeafZone, 0.12 * LeafZone);
 		for (int pair = 0; pair < pairs; pair++)
 		{
 			double at = zoneStart + spacing * pair;
-			Vector3 Sagged(double along) =>
-				start + dir * along
-				+ sag * ((along - zoneStart) / zone * ((along - zoneStart) / zone));
-			Vector3 spineA = Sagged(at);
-			Vector3 spineB = Sagged(at + span);
-			Vector3 mid = Sagged(at + span / 2);
+			Vector3 spineA = start + dir * at;
+			Vector3 spineB = start + dir * (at + span);
+			Vector3 mid = start + dir * (at + span / 2);
 			double wingLength = wingReach * Math.Sin(Math.PI * (pair + 1) / (pairs + 1));
 			double wingAngle = -1.2374 * (1 - p.LeafOrientation) + (p.Random(0) - 0.5) * 0.4;
 			Vector3 wing = (side * Math.Cos(wingAngle) + up * Math.Sin(wingAngle)) * wingLength;
@@ -419,14 +390,11 @@ public sealed class Tree
 			// The ring the tree stands on.
 			branch.Root = [];
 			var axis = new Vector3(0, 1, 0);
-			double ringRadius = Properties.RootSpread.HasValue
-				? radius * Properties.RootSpread.Value
-				: radius / Properties.RadiusFalloffRate;
 			for (int i = 0; i < segments; i++)
 			{
 				Vector3 vec = new Vector3(-1, 0, 0).AxisAngle(axis, -segmentAngle * i);
 				branch.Root.Add(vertices.Count);
-				vertices.Add(vec * ringRadius);
+				vertices.Add(vec * (radius / Properties.RadiusFalloffRate));
 			}
 		}
 
@@ -628,7 +596,9 @@ public sealed class Tree
 
 		if (branch.Parent == null)
 		{
-			// Band the ground ring to the first fork's ring, rotated to face it.
+			// Band the ground ring to the first fork's ring, rotated to face it. U runs
+			// once round each ring, as the C++ port has it; the original mirrored it, so
+			// a bark texture ran twice round the trunk and backwards on one side.
 			Vector3 tangent = Vector3.Cross(
 				branch.Child0.Head - branch.Head,
 				branch.Child1.Head - branch.Head).Normalized;
@@ -645,12 +615,11 @@ public sealed class Tree
 				int v4 = branch.Ring0[(i + 1) % segments];
 
 				faces.Add(new Face(v1, v4, v2, v3));
-				uv[(i + segOffset) % segments] =
-					new Vector2(Math.Abs(i / (double)segments - 0.5) * 2, 0);
+				uv[(i + segOffset) % segments] = new Vector2(i / (double)segments, 0);
 				double len = (vertices[branch.Ring0[i]] - vertices[branch.Root[(i + segOffset) % segments]]).Length
 					* Properties.VMultiplier;
-				uv[branch.Ring0[i]] = new Vector2(Math.Abs(i / (double)segments - 0.5) * 2, len);
-				uv[branch.Ring2[i]] = new Vector2(Math.Abs(i / (double)segments - 0.5) * 2, len);
+				uv[branch.Ring0[i]] = new Vector2(i / (double)segments, len);
+				uv[branch.Ring2[i]] = new Vector2(i / (double)segments, len);
 			}
 		}
 
@@ -730,11 +699,9 @@ public sealed class Tree
 				faces.Add(new Face(branch.Child1.End, branch.Ring2[(i + 1) % segments], branch.Ring2[i]));
 
 				double len = (vertices[branch.Child0.End] - vertices[branch.Ring1[i]]).Length;
-				uv[branch.Child0.End] =
-					new Vector2(Math.Abs(i / (double)segments - 1 - 0.5) * 2, len * Properties.VMultiplier);
+				uv[branch.Child0.End] = new Vector2(i / (double)segments - 1, len * Properties.VMultiplier);
 				len = (vertices[branch.Child1.End] - vertices[branch.Ring2[i]]).Length;
-				uv[branch.Child1.End] =
-					new Vector2(Math.Abs(i / (double)segments - 0.5) * 2, len * Properties.VMultiplier);
+				uv[branch.Child1.End] = new Vector2(i / (double)segments, len * Properties.VMultiplier);
 			}
 		}
 	}
@@ -764,6 +731,85 @@ public sealed class Tree
 				total += norm * (1.0 / count);
 			normals[i] = total;
 		}
+	}
+
+	/// <summary>Bark UVs for the radial tree, laid the way the fork's are: U once
+	/// round every ring, V the distance climbed up the stem, and along each limb from
+	/// its ring to its tip, by VMultiplier.</summary>
+	void CreateRadialUV(List<Vector3> centers)
+	{
+		int segments = Properties.Segments;
+		double climbed = 0;
+		for (int ring = 0; ring < centers.Count; ring++)
+		{
+			if (ring > 0)
+				climbed += (centers[ring] - centers[ring - 1]).Length;
+			for (int i = 0; i < segments; i++)
+				uv[ring * segments + i] = new Vector2(i / (double)segments, climbed * Properties.VMultiplier);
+		}
+		for (int at = centers.Count * segments; at + segments < vertices.Count; at += segments + 1)
+		{
+			var centre = new Vector3(0, 0, 0);
+			for (int i = 0; i < segments; i++)
+				centre += vertices[at + i] * (1.0 / segments);
+			for (int i = 0; i < segments; i++)
+				uv[at + i] = new Vector2(i / (double)segments, 0);
+			uv[at + segments] = new Vector2(0, (vertices[at + segments] - centre).Length * Properties.VMultiplier);
+		}
+	}
+
+	/// <summary>The C++ port's seam fix. Where a face spans the ring's seam, its U
+	/// jumping from near one back to zero, the vertex at zero is duplicated with U at
+	/// one and the face rebound to the copy, so the texture does not wrap backwards
+	/// across that band. The copies come after every original vertex.</summary>
+	void FixUVs()
+	{
+		int count = vertices.Count;
+		var duplicate = new Dictionary<int, int>();
+		var fixedFaces = new List<Face>(faces.Count);
+		var newVertices = new List<Vector3>();
+		var newNormals = new List<Vector3>();
+		var newUV = new List<Vector2>();
+		int[] original = new int[4];
+		int[] corners = new int[4];
+		foreach (Face face in faces)
+		{
+			int n = face.IsQuad ? 4 : 3;
+			original[0] = corners[0] = face.A;
+			original[1] = corners[1] = face.B;
+			original[2] = corners[2] = face.C;
+			original[3] = corners[3] = face.D;
+			for (int i = 0; i < n; i++)
+			{
+				if (uv[original[i]].X != 0)
+					continue;
+				bool wraps = false;
+				for (int j = 0; j < n; j++)
+					if (Math.Abs(uv[original[i]].X - uv[original[j]].X) > 0.5)
+						wraps = true;
+				if (!wraps)
+					continue;
+				if (!duplicate.TryGetValue(original[i], out int copy))
+				{
+					copy = count + newVertices.Count;
+					duplicate[original[i]] = copy;
+					newVertices.Add(vertices[original[i]]);
+					newNormals.Add(normals[original[i]]);
+					newUV.Add(new Vector2(1, uv[original[i]].Y));
+				}
+				corners[i] = copy;
+			}
+			fixedFaces.Add(n == 4
+				? new Face(corners[0], corners[1], corners[2], corners[3])
+				: new Face(corners[0], corners[1], corners[2]));
+		}
+		if (newVertices.Count == 0)
+			return;
+		vertices.AddRange(newVertices);
+		normals = [.. normals, .. newNormals];
+		uv = [.. uv, .. newUV];
+		faces.Clear();
+		faces.AddRange(fixedFaces);
 	}
 
 	// JavaScript's Math.round, which the original leans on: half rounds up, not to

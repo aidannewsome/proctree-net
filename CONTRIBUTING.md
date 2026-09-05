@@ -2,7 +2,7 @@
 
 ## A preset
 
-[presets.json](presets.json) holds settings for nine species, with a typical height, crown
+[presets.json](presets.json) holds settings for eleven species, with a typical height, crown
 and trunk in metres and bark and foliage colours. Found settings that make a convincing
 tree? Open a [Preset issue](../../issues/new?template=preset.yml). The form asks for the
 entry as it would appear in the file, the seed you used, and a picture of the result,
